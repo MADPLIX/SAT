@@ -1,6 +1,6 @@
 ---
 name: 🐞 Bug Report
-about: Report a problem or unexpected behavior in the Sound BPM Analyzer addon
+about: Report a problem or unexpected behavior in the Sound Animation Tool addon
 title: "[BUG] <short description>"
 labels: bug
 assignees: ''
