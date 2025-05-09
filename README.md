@@ -13,7 +13,7 @@ based on the analysis – perfect for music-driven visual effects.
 - Modular and beginner-friendly UI
 
 ## Installation
-1. Download the [ZIP file](https://github.com/MADPLIX/SAT/releases).
+1. Download the [ZIP file](https://github.com/MADPLIX/SAT/releases/latest).
 2. In Blender, go to Edit > Preferences > Add-ons > Install.
 3. Select the ZIP file and activate the addon.
 
