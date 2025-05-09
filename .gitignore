@@ -1,0 +1,19 @@
+# Ignore all zip files
+*.zip
+
+# Ignore Blender temp files
+*.blend1
+*.blend2
+*.blend@
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Optional: ignore frequency output if generated
+*_freq_data.json
