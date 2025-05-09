@@ -252,6 +252,10 @@ class BPM_OT_ApplyFreqKeyframes(bpy.types.Operator):
 
         fps = sr / hop
         transform_type = props.transform_type
+        bone_name = props.target_bone_name
+        use_bone = obj.type == 'ARMATURE' and bone_name and bone_name in obj.pose.bones
+        target = obj.pose.bones[bone_name] if use_bone else obj
+
         index_map = {'X': 0, 'Y': 1, 'Z': 2}
         index = index_map.get(list(props.axes)[0])  # use first selected axis
 
@@ -265,13 +269,19 @@ class BPM_OT_ApplyFreqKeyframes(bpy.types.Operator):
             frame = i * (context.scene.render.fps / fps)
 
             if transform_type == "location":
-                obj.location[index] = value
+                target.location[index] = value
             elif transform_type == "rotation_euler":
-                obj.rotation_euler[index] = value
+                target.rotation_euler[index] = value
             elif transform_type == "scale":
-                obj.scale[index] = 1.0 + value
+                target.scale[index] = 1.0 + value
 
-            obj.keyframe_insert(data_path=transform_type, index=index, frame=frame)
+            if use_bone:
+                data_path = f'pose.bones["{bone_name}"].{transform_type}'
+            else:
+                data_path = transform_type
+
+            obj.keyframe_insert(data_path=data_path, index=index, frame=frame)
+
 
         if obj.animation_data and obj.animation_data.action:
             fcurve = obj.animation_data.action.fcurves.find(transform_type, index=index)
