@@ -1,10 +1,10 @@
 bl_info = {
-    "name": "Sound BPM Analyzer",
-    "blender": (4, 0, 0),
+    "name": "Sound Animation Tool",
+    "blender": (4, 4, 0),
     "category": "Animation",
-    "version": (1, 0, 0),
-    "author": "Dein Name",
-    "description": "Analysiert Audiodateien (.wav) und zeigt BPM im Panel",
+    "version": (1, 1, 0),
+    "author": "MadPlix",
+    "description": "Analyze audio tracks and automatically generate animations based on BPM or audio frequency energy – ideal for music visualizations, motion design, or reactive camera and light effects.",
 }
 
 import bpy
@@ -88,15 +88,29 @@ class BPMAddonProperties(bpy.types.PropertyGroup):
         items=[
             ('location', "Location", ""),
             ('rotation_euler', "Rotation", ""),
+            ('rotation_quaternion', "Rotation (Quaternion)", ""),
             ('scale', "Scale", "")
         ],
         default='location'
     )
 
-    axes: bpy.props.EnumProperty(
+    axes_xyz: bpy.props.EnumProperty(
         name="Axes",
-        description="Which axes should be affected?",
+        description="X/Y/Z axes",
         items=[
+            ('X', "X", ""),
+            ('Y', "Y", ""),
+            ('Z', "Z", "")
+        ],
+        options={'ENUM_FLAG'},
+        default={'Z'}
+    )
+
+    axes_wxyz: bpy.props.EnumProperty(
+        name="Axes",
+        description="W/X/Y/Z axes for quaternion rotation",
+        items=[
+            ('W', "W", ""),
             ('X', "X", ""),
             ('Y', "Y", ""),
             ('Z', "Z", "")
@@ -146,48 +160,16 @@ class BPMAddonProperties(bpy.types.PropertyGroup):
         name="Frequency Band",
         description="Frequency range used for reactive animation",
         items=[
-            ('kick', "Kick (40–100 Hz)", ""),
-            ('bass', "Bass (100–200 Hz)", ""),
-            ('snare', "Snare (400–1000 Hz)", ""),
-            ('hihat', "Hi-Hat (6k–10k Hz)", "")
-        ],
-        default='kick'
-    )
-    impulse_type: bpy.props.EnumProperty(
-        name="Impulse Shape",
-        description="How each beat affects the curve",
-        items=[
-            ('IMPULSE', "Impulse (default)", ""),
-            ('SINUS', "Sinus Wave", ""),
-            ('BOUNCE', "Bounce", ""),
-            ('EASE', "Ease In/Out", "")
-        ],
-        default='IMPULSE'
-    )
-
-    motion_preset: bpy.props.EnumProperty(
-        name="Preset",
-        description="Apply a predefined motion pattern",
-        items=[
-            ('NONE', "None", ""),
-            ('SHAKE_X', "Shake (X)", ""),
-            ('SHAKE_YZ', "Shake (Y + Z)", ""),
-            ('PULSE_SCALE', "Pulse (Scale)", ""),
-            ('ROTATE', "Wobble (Rotation)", "")
+            ('NONE', "Select", "Please select a frequency band"),
+            ('Sub-Bass', "Sub-Bass (20–60 Hz)", ""),
+            ('Bass', "Bass (60 - 250 Hz)", ""),
+            ('Low Midrange', "Low Midrange (250 – 500 Hz)", ""),
+            ('Midrange', "Midrange (500 – 2k Hz)", ""),
+            ('High Midrange', "High Midrange (2k – 4k Hz)", ""),
+            ('Presence', "Presence (4k–6k Hz)", ""),
+            ('Brilliance', "Brilliance (6k–20k Hz", "")
         ],
         default='NONE'
-    )
-
-    freq_band: bpy.props.EnumProperty(
-        name="Frequency Band",
-        description="Which frequency range to use for animation",
-        items=[
-            ('kick', "Kick (40–100 Hz)", ""),
-            ('bass', "Bass (100–200 Hz)", ""),
-            ('snare', "Snare (400–1000 Hz)", ""),
-            ('hihat', "Hi-Hat (6k–10k Hz)", "")
-        ],
-        default='kick'
     )
 
 class BPM_OT_AnalyzeFrequencies(bpy.types.Operator):
@@ -252,19 +234,33 @@ class BPM_OT_ApplyFreqKeyframes(bpy.types.Operator):
 
         fps = sr / hop
         transform_type = props.transform_type
+
+        # Achsenwahl
+        if transform_type == 'rotation_quaternion':
+            axes = props.axes_wxyz
+            axis_map = {'W': 0, 'X': 1, 'Y': 2, 'Z': 3}
+        else:
+            axes = props.axes_xyz
+            axis_map = {'X': 0, 'Y': 1, 'Z': 2}
+
+        index = axis_map.get(list(axes)[0])
+
+        # Zielobjekt vorbereiten (Bone oder Objekt)
         bone_name = props.target_bone_name
         use_bone = obj.type == 'ARMATURE' and bone_name and bone_name in obj.pose.bones
         target = obj.pose.bones[bone_name] if use_bone else obj
 
-        index_map = {'X': 0, 'Y': 1, 'Z': 2}
-        index = index_map.get(list(props.axes)[0])  # use first selected axis
+        # 🧠 Sicherstellen, dass rotation_mode mit transform_type übereinstimmt
+        if hasattr(target, "rotation_mode"):
+            if transform_type == 'rotation_quaternion' and target.rotation_mode != 'QUATERNION':
+                target.rotation_mode = 'QUATERNION'
+            elif transform_type == 'rotation_euler' and target.rotation_mode != 'XYZ':
+                target.rotation_mode = 'XYZ'
 
-        max_val = max(values)
-        if max_val == 0:
-            max_val = 1  # avoid division by zero
+        max_val = max(values) if max(values) > 0 else 1
 
         for i, raw in enumerate(values):
-            norm_value = raw / max_val  # normalize to 0.0–1.0
+            norm_value = raw / max_val
             value = norm_value * props.amplitude
             frame = i * (context.scene.render.fps / fps)
 
@@ -272,6 +268,8 @@ class BPM_OT_ApplyFreqKeyframes(bpy.types.Operator):
                 target.location[index] = value
             elif transform_type == "rotation_euler":
                 target.rotation_euler[index] = value
+            elif transform_type == "rotation_quaternion":
+                target.rotation_quaternion[index] = value
             elif transform_type == "scale":
                 target.scale[index] = 1.0 + value
 
@@ -282,7 +280,7 @@ class BPM_OT_ApplyFreqKeyframes(bpy.types.Operator):
 
             obj.keyframe_insert(data_path=data_path, index=index, frame=frame)
 
-
+        # Interpolation verbessern
         if obj.animation_data and obj.animation_data.action:
             fcurve = obj.animation_data.action.fcurves.find(transform_type, index=index)
             if fcurve:
@@ -376,7 +374,23 @@ class BPM_OT_ApplyBeatKeyframes(bpy.types.Operator):
         props = context.scene.bpm_props
         obj = context.active_object
 
-        # Apply motion preset if selected
+        if not obj:
+            self.report({'WARNING'}, "No object selected.")
+            return {'CANCELLED'}
+
+        transform_type = props.transform_type
+        bone_name = props.target_bone_name
+        use_bone = obj.type == 'ARMATURE' and bone_name and bone_name in obj.pose.bones
+        target = obj.pose.bones[bone_name] if use_bone else obj
+
+        # 🧠 Set rotation_mode if needed
+        if hasattr(target, "rotation_mode"):
+            if transform_type == 'rotation_quaternion' and target.rotation_mode != 'QUATERNION':
+                target.rotation_mode = 'QUATERNION'
+            elif transform_type == 'rotation_euler' and target.rotation_mode != 'XYZ':
+                target.rotation_mode = 'XYZ'
+
+        # Motion preset
         preset = props.motion_preset
         if preset != 'NONE':
             start = props.start_frame
@@ -403,119 +417,81 @@ class BPM_OT_ApplyBeatKeyframes(bpy.types.Operator):
 
             elif preset == 'ROTATE':
                 for f in range(start, end + 1, 5):
-                    obj.rotation_euler.z = (-1)**f * 0.1
-                    obj.keyframe_insert(data_path="rotation_euler", index=2, frame=f)
+                    if transform_type == 'rotation_quaternion':
+                        obj.rotation_quaternion[3] = (-1)**f * 0.1
+                        obj.keyframe_insert(data_path="rotation_quaternion", index=3, frame=f)
+                    else:
+                        obj.rotation_euler.z = (-1)**f * 0.1
+                        obj.keyframe_insert(data_path="rotation_euler", index=2, frame=f)
 
             self.report({'INFO'}, f"Preset '{preset}' applied.")
             return {'FINISHED'}
 
-        # Regular BPM-based keyframe generation
-        if not obj:
-            self.report({'WARNING'}, "No object selected.")
-            return {'CANCELLED'}
-
         bpm = props.bpm_value
         frames_per_beat = props.frames_per_beat
-
         if bpm <= 0 or frames_per_beat <= 0:
             self.report({'WARNING'}, "Invalid BPM data.")
             return {'CANCELLED'}
 
-        axes = props.axes
-        transform_type = props.transform_type
-        bone_name = props.target_bone_name
+        # Achsenwahl
+        if transform_type == 'rotation_quaternion':
+            axes = props.axes_wxyz
+            axis_map = {'W': 0, 'X': 1, 'Y': 2, 'Z': 3}
+        else:
+            axes = props.axes_xyz
+            axis_map = {'X': 0, 'Y': 1, 'Z': 2}
 
-        use_bone = obj.type == 'ARMATURE' and bone_name and bone_name in obj.pose.bones
-        target = obj.pose.bones[bone_name] if use_bone else obj
-
-        axis_map = {'X': 0, 'Y': 1, 'Z': 2}
         fcurve_owner = obj
-
         if not fcurve_owner.animation_data:
             fcurve_owner.animation_data_create()
-
-        action = fcurve_owner.animation_data.action
-        if not action:
-            action = bpy.data.actions.new(name="BPM_Action")
-            fcurve_owner.animation_data.action = action
+        if not fcurve_owner.animation_data.action:
+            fcurve_owner.animation_data.action = bpy.data.actions.new(name="BPM_Action")
 
         for axis in axes:
             index = axis_map[axis]
-            start = props.start_frame
+            frame = props.start_frame
             end = props.end_frame
-            frame = start
 
             while frame + 1 <= end:
-                impulse_type = props.impulse_type
+                impulse = props.impulse_type
 
-                if impulse_type == 'IMPULSE':
-                    if transform_type == "location":
-                        target.location[index] = 0.0
-                    elif transform_type == "rotation_euler":
-                        target.rotation_euler[index] = 0.0
-                    elif transform_type == "scale":
-                        target.scale[index] = 0.0
+                def set_value(val):
+                    if transform_type == 'location':
+                        target.location[index] = val
+                    elif transform_type == 'rotation_euler':
+                        target.rotation_euler[index] = val
+                    elif transform_type == 'rotation_quaternion':
+                        target.rotation_quaternion[index] = val
+                    elif transform_type == 'scale':
+                        target.scale[index] = val
+
+                if impulse == 'IMPULSE':
+                    set_value(0.0)
                     target.keyframe_insert(data_path=transform_type, index=index, frame=frame)
-
-                    if transform_type == "location":
-                        target.location[index] = props.amplitude
-                    elif transform_type == "rotation_euler":
-                        target.rotation_euler[index] = props.amplitude
-                    elif transform_type == "scale":
-                        target.scale[index] = props.amplitude
+                    set_value(props.amplitude)
                     target.keyframe_insert(data_path=transform_type, index=index, frame=frame + 0.015)
 
-                elif impulse_type == 'SINUS':
+                elif impulse == 'SINUS':
                     import math
                     steps = 5
                     for i in range(steps + 1):
                         t = i / steps
                         value = math.sin(t * math.pi) * props.amplitude
                         current_frame = frame + t * frames_per_beat
-
-                        if transform_type == "location":
-                            target.location[index] = value
-                        elif transform_type == "rotation_euler":
-                            target.rotation_euler[index] = value
-                        elif transform_type == "scale":
-                            target.scale[index] = value
-
+                        set_value(value)
                         target.keyframe_insert(data_path=transform_type, index=index, frame=current_frame)
 
-                elif impulse_type == 'BOUNCE':
-                    bounce_values = [
-                        props.amplitude,
-                        -props.amplitude * 0.5,
-                        props.amplitude * 0.25,
-                        0
-                    ]
-                    for i, value in enumerate(bounce_values):
-                        current_frame = frame + i * (frames_per_beat / len(bounce_values))
-
-                        if transform_type == "location":
-                            target.location[index] = value
-                        elif transform_type == "rotation_euler":
-                            target.rotation_euler[index] = value
-                        elif transform_type == "scale":
-                            target.scale[index] = value
-
+                elif impulse == 'BOUNCE':
+                    bounce = [props.amplitude, -props.amplitude * 0.5, props.amplitude * 0.25, 0]
+                    for i, val in enumerate(bounce):
+                        current_frame = frame + i * (frames_per_beat / len(bounce))
+                        set_value(val)
                         target.keyframe_insert(data_path=transform_type, index=index, frame=current_frame)
 
-                elif impulse_type == 'EASE':
-                    if transform_type == "location":
-                        target.location[index] = 0.0
-                    elif transform_type == "rotation_euler":
-                        target.rotation_euler[index] = 0.0
-                    elif transform_type == "scale":
-                        target.scale[index] = 0.0
+                elif impulse == 'EASE':
+                    set_value(0.0)
                     target.keyframe_insert(data_path=transform_type, index=index, frame=frame)
-
-                    if transform_type == "location":
-                        target.location[index] = props.amplitude
-                    elif transform_type == "rotation_euler":
-                        target.rotation_euler[index] = props.amplitude
-                    elif transform_type == "scale":
-                        target.scale[index] = props.amplitude
+                    set_value(props.amplitude)
                     target.keyframe_insert(data_path=transform_type, index=index, frame=frame + frames_per_beat)
 
                 frame += frames_per_beat
@@ -528,7 +504,7 @@ class BPM_PT_Main(bpy.types.Panel):
     bl_idname = "BPM_PT_Main"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Sound BPM'
+    bl_category = 'SAT'
 
     def draw(self, context):
         layout = self.layout
@@ -542,7 +518,7 @@ class BPM_PT_CurveSettings(bpy.types.Panel):
     bl_idname = "BPM_PT_CurveSettings"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Sound BPM'
+    bl_category = 'SAT'
 
     def draw(self, context):
         layout = self.layout
@@ -557,7 +533,7 @@ class BPM_PT_ObjectPanel(bpy.types.Panel):
     bl_idname = "BPM_PT_ObjectPanel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Sound BPM'
+    bl_category = 'SAT'
 
     def draw(self, context):
         layout = self.layout
@@ -573,15 +549,21 @@ class BPM_PT_ObjectPanel(bpy.types.Panel):
             layout.label(text="⚠ No object selected", icon='ERROR')
 
         layout.separator()
+        
         layout.prop(props, "transform_type", text="Property")
-        layout.prop(props, "axes", text="Axes")
+        if props.transform_type == 'rotation_quaternion':
+            layout.prop(props, "axes_wxyz", expand=True, text="Axes (WXYZ)")
+        else:
+            layout.prop(props, "axes_xyz", expand=True, text="Axes (XYZ)")
+
+
 
 class BPM_PT_BPMPanel(bpy.types.Panel):
     bl_label = "BPM Animation"
     bl_idname = "BPM_PT_BPMPanel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Sound BPM'
+    bl_category = 'SAT'
 
     def draw(self, context):
         layout = self.layout
@@ -607,7 +589,7 @@ class BPM_PT_FreqPanel(bpy.types.Panel):
     bl_idname = "BPM_PT_FreqPanel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Sound BPM'
+    bl_category = 'SAT'
 
     def draw(self, context):
         layout = self.layout

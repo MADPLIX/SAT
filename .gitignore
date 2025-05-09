@@ -17,3 +17,9 @@ Thumbs.db
 
 # Optional: ignore frequency output if generated
 *_freq_data.json
+
+make_zip.py
+
+# Ignore all build artifacts
+/dist/
+/.vscode/
