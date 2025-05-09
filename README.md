@@ -17,6 +17,9 @@ based on the analysis – perfect for music-driven visual effects.
 2. In Blender, go to Edit > Preferences > Add-ons > Install.
 3. Select the ZIP file and activate the addon.
 
+## Bug Report
+for any bug reports use the [🐞Bug Report](https://github.com/MADPLIX/SAT/issues) Template.
+
 ## License
 MIT License – see LICENSE file for details.
 
