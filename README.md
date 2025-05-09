@@ -1,4 +1,4 @@
-# Sound BPM Analyzer
+# SOUND ANIMATION TOOL
 
 This Blender addon analyzes `.wav` or `.mp3` audio files to extract either the tempo (BPM)
 or frequency-based energy data (Kick, Bass, Snare, Hihat). It then creates animation keyframes 
